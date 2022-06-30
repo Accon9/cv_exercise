@@ -1,0 +1,57 @@
+import cv2
+import numpy as np
+card=cv2.imread("C:/Users/win10/Desktop/a.jpg",0)
+stand=cv2.imread("C:/Users/win10/Desktop/b.jpg",0)
+cv2.imshow('org.number',card)
+#二值化处理
+thresh_val_c,thresh_c=cv2.threshold(card,100,255,cv2.THRESH_BINARY_INV)
+thresh_val_s,thresh_s=cv2.threshold(stand,100,255,cv2.THRESH_BINARY_INV)
+
+cv2.imshow('thresh_c',thresh_c)
+#滤波器降噪
+new_card=cv2.medianBlur(thresh_c,5)
+cv2.imshow('new_card',new_card)
+thresh_val_c_c,thresh_c_c=cv2.threshold(new_card,100,255,cv2.THRESH_BINARY_INV)
+cv2.imshow('thresh_c_c',thresh_c_c)
+#获取图像数字轮廓信息
+def sequence_contours(image,width,height):
+    contours,hierarchy=cv2.findContours(image,cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX_SIMPLE)
+    n=len(contours)
+    r_box0=np.zeros((n,4),int)
+    for i in range(n):
+        r_box0[i]=cv2.boundingRect(contours[i])
+
+    r_box1=np.zeros((n,4),int)
+    for i in range(n):
+        sequence=0
+        for j in range(n):
+            if r_box0[i][0]>r_box0[j][0]:
+                sequence=sequence+1
+        r_box1[sequence]=r_box0[i]
+
+    IMGbox=[[]for i in range(n)]
+    for i in range(n):
+        x,y,w,h=r_box1[i]
+        ROI=image[y:y+h,x:x+w]
+        ROI=cv2.resize(ROI,(width,height))
+        Thresh_ROI,ROI=cv2.threshold(ROI,200,255,cv2.THRESH_BINARY)
+        IMGbox[i]=ROI
+
+    return r_box1,IMGbox
+#将读取的数字图片进行排序
+r_box1_Temp,IMGbox_Temp=sequence_contours(thresh_s,50,80)
+print(r_box1_Temp)
+r_box1,IMGbox=sequence_contours(thresh_c_c,50,80)
+#模板匹配
+result=[]
+for i in range(len(IMGbox)):
+    score=np.zeros(len(IMGbox_Temp),int)
+    for j in range(len(IMGbox_Temp)):
+        score[j]=cv2.matchTemplate(IMGbox[i],IMGbox_Temp[j],cv2.TM_SQDIFF)
+    min_val,max_val,min_Indx,max_Indx=cv2.minMaxLoc(score)
+    result.append(min_Indx[1])
+print(result)
+
+cv2.imshow('stand',thresh_s)
+cv2.waitKey(0)
+cv2.destroyAllWindows()
