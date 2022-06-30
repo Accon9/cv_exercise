@@ -1,3 +1,12 @@
+#银行卡卡号识别
+#步骤：
+    1.读取图像，进行二值化处理
+    2.轮廓识别与处理
+    3.形态学变化
+    4.提取每个数字图像
+    5.排序数字图像
+    6.匹配模板
+    
 import cv2
 import numpy as np
 card=cv2.imread("C:/Users/win10/Desktop/a.jpg",0)
