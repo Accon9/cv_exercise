@@ -15,13 +15,14 @@ cv2.imshow('org.number',card)
 #二值化处理
 thresh_val_c,thresh_c=cv2.threshold(card,100,255,cv2.THRESH_BINARY_INV)
 thresh_val_s,thresh_s=cv2.threshold(stand,100,255,cv2.THRESH_BINARY_INV)
-
 cv2.imshow('thresh_c',thresh_c)
-#滤波器降噪
-new_card=cv2.medianBlur(thresh_c,5)
-cv2.imshow('new_card',new_card)
-thresh_val_c_c,thresh_c_c=cv2.threshold(new_card,100,255,cv2.THRESH_BINARY_INV)
-cv2.imshow('thresh_c_c',thresh_c_c)
+#形态学操作
+kernel = np.ones((3,3))
+grad_close = cv2.morphologyEx(grad,cv2.MORPH_CLOSE,kernel,iterations = 1)
+imshow(grad_close)
+grad_dst = cv2.threshold(grad_close,0,255,cv2.THRESH_OTSU)[1]
+imshow(grad_dst)
+grad_close = cv2.morphologyEx(grad_dst,cv2.MORPH_CLOSE,kernel,iterations=8)
 #获取图像数字轮廓信息
 def sequence_contours(image,width,height):
     contours,hierarchy=cv2.findContours(image,cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX_SIMPLE)
