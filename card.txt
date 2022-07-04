@@ -9,59 +9,90 @@
     
 import cv2
 import numpy as np
-card=cv2.imread("C:/Users/win10/Desktop/a.jpg",0)
-stand=cv2.imread("C:/Users/win10/Desktop/b.jpg",0)
-cv2.imshow('org.number',card)
-#二值化处理
-thresh_val_c,thresh_c=cv2.threshold(card,100,255,cv2.THRESH_BINARY_INV)
-thresh_val_s,thresh_s=cv2.threshold(stand,100,255,cv2.THRESH_BINARY_INV)
-cv2.imshow('thresh_c',thresh_c)
-#形态学操作
-kernel = np.ones((3,3))
-grad_close = cv2.morphologyEx(grad,cv2.MORPH_CLOSE,kernel,iterations = 1)
-imshow(grad_close)
-grad_dst = cv2.threshold(grad_close,0,255,cv2.THRESH_OTSU)[1]
-imshow(grad_dst)
-grad_close = cv2.morphologyEx(grad_dst,cv2.MORPH_CLOSE,kernel,iterations=8)
-#获取图像数字轮廓信息
+
+#读取图像
+card_GRAY = cv2.imread('card.jpg',0)
+#改变图像大小（视情况而定）
+card_GRAY4 = cv2.resize(card_GRAY,(4 * card_GRAY.shape[1],4*card_GRAY.shape[0]))
+cv2.imshow('card_GRAY4',card_GRAY4)
+#二值化处理，使用自适应阈值
+adaptiveThresh = cv2.adativeThresh = cv2.adaptiveThreshold(card_GRAY4,255,cv2.ADAPTIVE_THRESH_MEAN_C,
+                                                           cv2.THRESH_BINARY_INV,10,3)
+cv2.imshow('adaptiveThresh',adaptiveThresh)
+#获取轮廓信息
+contours,hierarchy = cv2.findContours(adaptiveThresh,cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)
+#遍历每个轮廓，将噪点填充为黑色背景色
+for i in range(len(contours)):
+    if cv2.contourArea(contours[i])<160:
+        adaptiveThresh = cv2.drawContours(adaptiveThresh,contours,i,(0,0,0),-1)
+cv2.imshow('adaptiveThresh2',adaptiveThresh)
+#黑帽运算
+kernel = np.ones((15,15),dtype=np.unit8)
+blackhat = cv2.morphologyEx(adaptiveThresh,cv2.MORPH_BLACKHAT,kernel)
+cv2.imshow('adaptiveThresh3',blackhat)
+#开运算将数字与背景完全割裂开
+kernel = np.ones((3,3),dtype=np.unit8)
+opening = cv2.morphologyEx(blackhat,cv2.MORPH_OPEN,kernel)
+cv2.imshow('opening',opening)
+#对图像再次处理，将剩余噪点填充为黑色
+contours,hierarchy = cv2.findContours(opening,cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)
+for i in range(len(contours)):
+    x,y,w,h = cv2.boundingRect(contours[i])
+    ratio = float(w)/h
+    Area = w * h
+    if Area < 1800 or Area > 5000:
+        opening = cv2.drawContours(opening,contours,i,(0,0,0),-1)
+    else:
+        if ratio > 0.6 or ratio < 0.57:
+            opening = cv2.drawContours(opening,contours,i,(0,0,0),-1)
+cv2.imshow('opening2',opening)
+#为了与模板匹配，对图像进行膨胀加粗（视情况而定）
+kernel = np.ones((5,5),dtype=np.unit8)
+dilation = cv2.dilate(opening,kernel,iterations = 1)
+cv2.imshow('dilation',dilation)
+#对模板进行处理
+Template = cv2.imshow('template.jpg')
+Template_GRAY = cv2.cvtColor(Template,cv2.COLOR_BGR2GRAY)
+ret,Template_GRAY = cv2.threshold(Template_GRAY,200,255,cv2.THRESH_BINARY)
+cv2.imshow('Template',Template_GRAY)
+
 def sequence_contours(image,width,height):
-    contours,hierarchy=cv2.findContours(image,cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX_SIMPLE)
-    n=len(contours)
-    r_box0=np.zeros((n,4),int)
+    contours, hierarchy = cv2.findContours(image, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    #将外接矩形参数存在一个矩阵中,因返回的参数有 x, y, w, h 所以需要一个n行4列的矩阵
+    n = len(contours)
+    RectBoxes0 = np.ones((n,4),dtype=int)
     for i in range(n):
-        r_box0[i]=cv2.boundingRect(contours[i])
-
-    r_box1=np.zeros((n,4),int)
+        RectBoxes0[i] = cv2.boundingRect(contours[i])
+        #建立一个新矩阵，将原矩阵排序后存入该矩阵
+    RectBoxes = np.ones((n, 4), dtype=int)
+        #对轮廓的参数 x 进行排序
     for i in range(n):
-        sequence=0
+        sequence = 0
         for j in range(n):
-            if r_box0[i][0]>r_box0[j][0]:
-                sequence=sequence+1
-        r_box1[sequence]=r_box0[i]
-
-    IMGbox=[[]for i in range(n)]
+            if RectBoxes0[i][0] > RectBoxes[i][0]:
+                sequence = sequence + 1
+        RectBoxes[sequence] = RectBoxes0[i]
+    #建立一个列表存储图像
+    ImgBoxes = [[] for i in range(n)]
     for i in range(n):
-        x,y,w,h=r_box1[i]
-        ROI=image[y:y+h,x:x+w]
-        ROI=cv2.resize(ROI,(width,height))
-        Thresh_ROI,ROI=cv2.threshold(ROI,200,255,cv2.THRESH_BINARY)
-        IMGbox[i]=ROI
+        x,y,w,h = RectBoxes[i]
+        ROI = image[y:y+h,x:x+h]
+        ROI = cv2.resize(ROI,(width,height))
+        thresh_val,ROI = cv2.threshold(ROI,200,255,cv2.THRESH_BINARY)
+        ImgBoxes[i] = ROI
+    return RectBoxes, ImgBoxes
 
-    return r_box1,IMGbox
-#将读取的数字图片进行排序
-r_box1_Temp,IMGbox_Temp=sequence_contours(thresh_s,50,80)
-print(r_box1_Temp)
-r_box1,IMGbox=sequence_contours(thresh_c_c,50,80)
+RectBoxer_Temp, ImgBoxes_Temp = sequence_contours(Template_GRAY,50,80)
+RectBoxes, ImgBoxes = sequence_contours(dilation, 50, 80)
 #模板匹配
-result=[]
-for i in range(len(IMGbox)):
-    score=np.zeros(len(IMGbox_Temp),int)
-    for j in range(len(IMGbox_Temp)):
-        score[j]=cv2.matchTemplate(IMGbox[i],IMGbox_Temp[j],cv2.TM_SQDIFF)
-    min_val,max_val,min_Indx,max_Indx=cv2.minMaxLoc(score)
-    result.append(min_Indx[1])
+result = []
+for i in range(len(ImgBoxes)):
+    score = np.zeros(len(ImgBoxes_Temp),dtype=int)
+    for j in range(len(ImgBoxes_Temp)):
+        score[j] = cv2.matchTemplate(ImgBoxes[i],ImgBoxes_Temp[j],cv2.TM_SQDIFF)
+    min_val, max_val, min_indx, max_indx = cv2.minMaxLoc(score)
+    result.append(min_indx[1])
 print(result)
-
-cv2.imshow('stand',thresh_s)
+    
 cv2.waitKey(0)
-cv2.destroyAllWindows()
+cv2.destoryAllWindows()
