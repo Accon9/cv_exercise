@@ -1,94 +1,86 @@
+#物体距离测量
+#步骤：
+    1.读取图像，灰度处理
+    2.高斯滤波处理图像
+    3.边缘检测并使用形态学操作处理
+    4.寻找最小外接矩形并对轮廓排序
+    5.将轮廓边框坐标赋给各顶点
+    6.计算各中点
+    7.计算距离
+
 from scipy.spatial import distance as dist
 from imutils import perspective
 from imutils import contours
 import numpy as np
-import argparse
 import imutils
 import cv2
 
-def midpoint(ptA, ptB):
-    return ((ptA[0] + ptB[0]) * 0.5, (ptA[1] + ptB[1]) * 0.5)
+#定义中点函数
+def midpoint(ptA,ptB):
+    return((ptA[0] + ptB[0]) * 0.5, (ptA[1] + ptB[1]) * 0.5)
 
-
+#读取图片
 image = cv2.imread("1.jpg")
-gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+image_GRAY = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
-# 对灰度图片执行高斯滤波
-gray = cv2.GaussianBlur(gray, (7, 7), 0)
-
-# 边缘检测
-edged = cv2.Canny(gray, 50, 100)
-
-# 通过形态学变化使相连的物体分开
-edged = cv2.dilate(edged, None, iterations=1)
-edged = cv2.erode(edged, None, iterations=1)
-
-# 寻找物体轮廓
-cnts = cv2.findContours(edged.copy(), cv2.RETR_EXTERNAL,
-                        cv2.CHAIN_APPROX_SIMPLE)
+#使用高斯滤波平滑处理图像
+image_GRAY = cv2.GaussianBlur(image_GRAY,(7, 7), 0)
+#边缘检测
+edged = cv2.Canny(image_GRAY, 50, 100)
+#使用闭运算将物体边缘封闭
+kernel = np.ones((3,3),dtype=np.unit8)
+edged = cv2.morphologyEx(edged,cv2.MORPH_CLOSE,kernel)
+#寻找轮廓
+cnts = cv2.findContours(edged.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 cnts = imutils.grab_contours(cnts)
 
-# 对轮廓按照从左到右进行排序处理
-(cnts, _) = contours.sort_contours(cnts)
+#对轮廓点进行排序
+(cnts,_) = contours.sort_contours(cnts)
 
-# 初始化 每度量比的像素
-pixelsPerMetric = None
+ret = None
+width = 2
 
-# 循环遍历轮廓
-for c in cnts:
-    # 认为当面积过小时是噪声的影响
-    if cv2.contourArea(c) < 100:
+for i in cnts:
+    #当轮廓不够大时，假设其为噪声丢弃
+    if cv2.contourArea(i) < 200:
         continue
-
-    # 根据物体轮廓计算出外切矩形框
-    orig = image.copy()
-    box = cv2.minAreaRect(c)
+    #计算最小外接矩形
+    box = cv2.minAreaRect(i)
     box = cv2.cv.BoxPoints(box)
     box = np.array(box, dtype="int")
 
-    # 对轮廓点进行排序，并绘制外切轮廓，用绿色的线来表示
+    #按照左上、右上、右下和左下的顺序排列旋转的边界框坐标
     box = perspective.order_points(box)
-    cv2.drawContours(orig, [box.astype("int")], -1, (0, 255, 0), 2)
+    #绘制轮廓
+    cv2.drawContours(image.copy(), [box.astype("int")], -1, (0, 255, 0), 2)
 
-    # 绘制轮廓个顶点，并用红色的圆圈来表示
-    for (x, y) in box:
-        cv2.circle(orig, (int(x), int(y)), 5, (0, 0, 255), -1)
+#计算各中点
+(tl, tr, br, bl) = box
 
-    # 分别计算top-left 和top-right的中心点和bottom-left 和bottom-right的中心点坐标
-    (tl, tr, br, bl) = box
-    (tltrX, tltrY) = midpoint(tl, tr)
-    (blbrX, blbrY) = midpoint(bl, br)
+(tltrX, tltrY) = midpoint(tl, tr)
+(blbrX, blbrY) = midpoint(bl, br)
+(tlblX, tlblY) = midpoint(tl, bl)
+(trbrX, trbrY) = midpoint(tr, br)
 
-    # 计算中心点坐标
-    (tlblX, tlblY) = midpoint(tl, bl)
-    (trbrX, trbrY) = midpoint(tr, br)
+#连线
+cv2.line(image.copy(), (int(tltrX), int(tltrY)), (int(blbrX), int(blbrY)), (255, 0, 255), 2)
+cv2.line(image.copy(), (int(tlblX), int(tlblY)), (int(trbrX), int(trbrY)), (255, 0, 255), 2)
 
-    # 绘制4条边的中心点，用蓝色的圆圈来表示
-    cv2.circle(orig, (int(tltrX), int(tltrY)), 5, (255, 0, 0), -1)
-    cv2.circle(orig, (int(blbrX), int(blbrY)), 5, (255, 0, 0), -1)
-    cv2.circle(orig, (int(tlblX), int(tlblY)), 5, (255, 0, 0), -1)
-    cv2.circle(orig, (int(trbrX), int(trbrY)), 5, (255, 0, 0), -1)
+#计算中点集之间的距离
+dA = dist.euclidean((tltrX, tltrY), (blbrX, blbrY))
+dB = dist.euclidean((tlblX, tlblY), (trbrX, trbrY))
 
-    # 在中心点之间绘制直线，用紫红色的线来表示
-    cv2.line(orig, (int(tltrX), int(tltrY)), (int(blbrX), int(blbrY)), (255, 0, 255), 2)
-    cv2.line(orig, (int(tlblX), int(tlblY)), (int(trbrX), int(trbrY)), (255, 0, 255), 2)
+if ret is None:
+    ret = dB / width
+#通过将相应的欧几里德距离除以 ret 值来计算物体尺寸
+dimA = dA / ret
+dimB = dB / ret
 
-    # 计算两个中心点之间的欧氏距离，即图片距离
-    dA = dist.euclidean((tltrX, tltrY), (blbrX, blbrY))
-    dB = dist.euclidean((tlblX, tlblY), (trbrX, trbrY))
+#绘制图像尺寸
+cv2.putText(image.copy(), "{:.1f}in".format(dimA),
+            (int(tltrX - 15), int(tltrY - 10)), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (255, 255, 255), 2)
+cv2.putText(image.copy(), "{:.1f}in".format(dimB),
+            (int(trbrX + 10), int(trbrY)), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (255, 255, 255), 2)
 
-    #如果没有，我们把分贝由我们提供 - 宽度 ，从而使我们每英寸我们的（近似）的像素
-    if pixelsPerMetric is None:
-        width = int(input("输入宽度"))
-        pixelsPerMetric = dB / width
-
-    # 计算目标的实际大小
-    dimA = dA / pixelsPerMetric
-    dimB = dB / pixelsPerMetric
-
-    # 在图片中绘制结果
-    cv2.putText(orig, "{:.1f}in".format(dimA), (int(tltrX - 15), int(tltrY - 10)), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (255, 255, 255), 2)
-    cv2.putText(orig, "{:.1f}in".format(dimB), (int(trbrX + 10), int(trbrY)), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (255, 255, 255), 2)
-
-    cv2.imshow("Image", orig)
-    cv2.waitKey(0)
+cv2.imshow("Image", image.copy())
+cv2.waitKey(0)
