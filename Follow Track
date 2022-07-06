@@ -1,0 +1,51 @@
+#物体目标跟踪
+#步骤：
+    1.运用KNN背景分割器,设置阴影检测
+    2.获取视频帧为图像
+    3.对视频帧图像进行二值化，高斯滤波，膨胀处理
+    4.获取目标轮廓
+    5.获取外界矩形
+    6.显示
+    
+import cv2
+
+# 获取视频
+video = cv2.VideoCapture('test.mp4')
+# KNN背景分割器,设置阴影检测
+bs = cv2.createBackgroundSubtractorKNN(detectShadows=True)
+
+while True:
+    # 获取视频每一帧
+    ret, frame = video.read()
+    # 计算视频的前景掩码
+    test = bs.apply(frame)
+    
+    #高斯滤波
+    test = cv2.GaussianBlur(test, (21, 21), 0)
+
+    # 将图像二值化处理
+    th = cv2.threshold(test.copy(), 244, 255, cv2.THRESH_BINARY)[1]
+    # 膨胀处理
+    dilated = cv2.dilate(th, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3)), iterations=2)
+
+    # 获取图像中的目标轮廓
+    image, contours, hier = cv2.findContours(dilated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    for c in contours:
+        if cv2.contourArea(c) > 1600:
+            # 绘制目标矩形框
+            (x, y, w, h) = cv2.boundingRect(c)
+            cv2.rectangle(frame, (x, y), (x+w, y+h), (255, 255, 0), 2)
+
+    # 显示差异视频
+    cv2.imshow('mog', test)
+    # cv2.imshow('thresh', th)
+    # 显示检测视频
+    cv2.imshow('detection', frame)
+    if cv2.waitKey(20) & 0xff == ord('q'):
+        break
+
+video.release()
+cv2.destroyAllWindows()
+
+
