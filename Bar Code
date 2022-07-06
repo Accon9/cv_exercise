@@ -1,0 +1,48 @@
+# 条形码区域分割
+
+import cv2
+import matplotlib.pyplot as plt
+import numpy as np
+# 读取图像
+im = cv2.imread('Bar code.jpg', cv2.IMREAD_GRAYSCALE)
+im_out = cv2.imread('1.jpg')
+# 调整图像大小
+scale = 800.0 / im.shape[1]
+im = cv2.resize(im, (int(im.shape[1] * scale), int(im.shape[0] * scale)))
+cv2.imshow('1',im)
+
+# 黑帽操作，二值化处理图像
+kernel = np.ones((1, 3), np.uint8)
+im = cv2.morphologyEx(im, cv2.MORPH_BLACKHAT, kernel, anchor=(1, 0))
+cv2.imshow('2',im)
+
+thresh, im = cv2.threshold(im, 10, 255, cv2.THRESH_BINARY)
+cv2.imshow('3',im)
+
+kernel = np.ones((1, 5), np.uint8)
+im = cv2.morphologyEx(im, cv2.MORPH_DILATE, kernel, anchor=(2, 0), iterations=1)
+im = cv2.morphologyEx(im, cv2.MORPH_CLOSE, kernel, anchor=(2, 0), iterations=1)
+cv2.imshow('4',im)
+
+kernel = np.ones((3, 10), np.uint8)
+im = cv2.morphologyEx(im, cv2.MORPH_OPEN, kernel, anchor=(2, 0), iterations=1)
+cv2.imshow('5',im)
+# 获取轮廓
+binary, contours, hierarchy = cv2.findContours(im, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+unscale = 1.0 / scale
+if contours != None:
+    for i in contours:
+        if cv2.contourArea(i) <= 2000:
+            continue
+        # 得到最小外接矩形的（中心(x,y), (宽,高), 旋转角度）
+        rect = cv2.minAreaRect(i) 
+        rect = ((int(rect[0][0] * unscale), int(rect[0][1] * unscale)),  
+                ((int(rect[1][0] * unscale), int(rect[1][1] * unscale))) , rect[2])
+        # 将参数转化为整数矩阵
+        box = np.int0(cv2.boxPoints(rect))
+        cv2.drawContours(im_out, [box], 0, (0, 255, 0),thickness = 2)
+plt.imshow(im_out)
+
+cv2.waitKey(0)
+cv2.destroyAllWindows()
