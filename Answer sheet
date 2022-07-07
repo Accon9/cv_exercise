@@ -1,0 +1,147 @@
+# 答题卡识别
+
+import cv2
+import numpy as np
+
+img = cv2.imread("Answer sheet.png", 1)
+#高斯去噪
+img_gs = cv2.GaussianBlur(img, (5, 5), 0)
+# 转灰度
+img_gray = cv2.cvtColor(img_gs, cv2.COLOR_BGR2GRAY)
+# 自适应二值化
+_, binary_img = cv2.threshold(img_gray, 0, 255, cv2.THRESH_OTSU|cv2.THRESH_BINARY)
+
+# 获取图像轮廓
+binary, contours, hierarchy = cv2.findContours(binary_img, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+# 按轮廓面积从大到小排序
+cnts = sorted(contours, key = cv2.contourArea, reverse = True)
+# 描绘纸张轮廓的点集
+draw_img = cv2.drawContours(img.copy(), cnts[0], -1, (255, 0, 0), 5)
+
+cv2.imshow('1', draw_img)
+
+# 轮廓近似
+alpha = 0.02 * cv2.arcLength(cnts[0], True)
+approxCurve = cv2.approxPolyDP(cnts[0], alpha, True) #cv2.approxPolyDP(contour,epsilon,True)，多边形逼近，第一个参数是点集，
+                                                     # 第二个参数是精度（原始轮廓的边界点与拟合多边形之间的最大距离），
+                                                     # 第三个参数指新产生的轮廓是否需要闭合，返回值approxCurve为多边形的点集（按照逆时针排序）。
+
+# 描绘轮廓
+draw_img = cv2.drawContours(img.copy(), [approxCurve], -1, (0, 0, 255), 2)
+
+cv2.imshow('2', draw_img)
+
+# 透视变换   透视矩阵是通过空间立体三维变换，根据其次坐标方差，要把三维坐标投影到另外一个视平面，最终改编图形形状
+# 透视变换       1.首先获取原图多边形的四个顶点，注意顶点顺序。
+#              2.然后构造原始顶点矩阵。
+#              3.计算矩形长宽，构造变换后的目标矩阵。
+#              4.获取原始矩阵到目标矩阵的透视变换矩阵
+#              5.进行透视变换
+
+a1 = list(approxCurve[0][0])
+a2 = list(approxCurve[1][0])
+a3 = list(approxCurve[2][0])
+a4 = list(approxCurve[3][0])
+# 原始矩阵
+mat1 = np.array([a1, a2, a3, a4], dtype = np.float32)
+
+# 计算矩形 w 和 h
+w1 = int(np.sqrt((a1[0]-a4[0])**2+(a1[1]-a4[1])**2))
+w2 = int(np.sqrt((a2[0]-a3[0])**2+(a2[1]-a3[1])**2))
+h1 = int(np.sqrt((a1[0]-a2[0])**2+(a1[1]-a2[1])**2))
+h2 = int(np.sqrt((a3[0]-a4[0])**2+(a3[1]-a4[1])**2))
+w,h=max(w1,w2),max(h1,h2)
+
+new_a1 = [0, 0]
+new_a2 = [0, h]
+new_a3 = [w, h]
+new_a4 = [w, 0]
+
+# 目标矩阵
+mat2 = np.array([new_a1, new_a2, new_a3, new_a4], dtype = np.float32)
+# 透视变换矩阵
+mat = cv2.getPerspectiveTransform(mat1,mat2)
+# 进行透视变换
+res = cv2.warpPerspective(img,mat,(w,h))
+
+cv2.imshow('3', res)
+
+# 绘制调整后图像轮廓
+res_gray = cv2.cvtColor(res, cv2.COLOR_BGR2GRAY)
+
+_, binary_res = cv2.threshold(res_gray, 0, 255, cv2.THRESH_OTSU|cv2.THRESH_BINARY_INV)
+
+contours = cv2.findContours(binary_res, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)[1]
+
+dst = cv2.drawContours(res.copy(), contours, -1, (0, 0, 255), 1)
+
+cv2.imshow('4', dst)
+
+# 筛选轮廓
+def check(contours):
+    ans = []
+    for i in contours:
+        area = float(cv2.contourArea(i))
+        length = float(cv2.arcLength(i, True))
+        if area <= 0 or length <= 0:
+            continue
+        if area/length > 7.05 and area / length < 10.5:
+            ans.append(i)
+    return ans
+ans_contours = check(contours)
+dst_new = cv2.drawContours(res.copy(), ans_contours, -1, (0, 255, 255), 3)
+
+cv2.imshow('5', dst_new)
+
+# 遍历每个圆形轮廓，绘制外接圆
+circle = []
+for i in ans_contours:
+    (x, y), r = cv2.minEnclosingCircle(i)
+    center = (int(x),int(y))
+    r = int(r)
+    circle.append((center,r))
+
+# 按照外接圆的水平坐标排序center[1]，也就是圆心的高度h，或者y坐标
+circle.sort(key = lambda x:x[0][1])
+Result = []
+for i in range(1, 6):
+    now = circle[(i - 1) * 5:i * 5]
+    now.sort(key = lambda x:x[0][0])
+    Result.extend(now)
+
+# 选项检测
+#思路：对于A中的每个选项圆，计算它有所覆盖的坐标，然后判断这些坐标在二值图像中对应的值，统计白色点的个数，
+#如果白色点所占的比例比较大的话，说明该选项被选中。
+
+def dots_distance(dot1, dot2):
+    # 计算二维空间中两个点的距离
+    return ((dot1[0] - dot2[0]) ** 2 + (dot1[1] - dot2[1]) ** 2) ** 0.5
+
+def count_dots(center, radius):
+    # 输入圆的中心点与半径，返回圆内所有的坐标
+    dots = []
+    for i in range(-radius, radius + 1):
+        for j in range(-radius, radius + 1):
+            dot2 = (center[0] + i, center[1] + j)
+            if dots_distance(center, dot2) <= radius:
+                dots.append(dot2)
+    return dots
+
+# 通过白色点判断选项
+da = []
+for i in Result:
+    dots = count_dots(i[0], i[1])
+    all_dots = len(dots)
+    white_dots = 0
+    for j in dots:
+        if binary_res[j[1]][j[0]] == 255:
+            white_dots += 1
+    if white_dots / all_dots >= 0.4:
+        da.append(1)
+    else:
+        da.append(0)
+da = np.array(da)
+da = np.reshape(da, (5, 5))
+print(da)
+
+cv2.waitKey(0)
