@@ -144,4 +144,5 @@ da = np.array(da)
 da = np.reshape(da, (5, 5))
 print(da)
 
+
 cv2.waitKey(0)
